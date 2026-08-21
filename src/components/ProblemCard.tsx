@@ -111,7 +111,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
         {problem.options.map(option => {
           const isSelected = selectedOptionLabel === option.label;
           const isSubmitted = !!submission;
-          const isCorrectOption = problem.correctOptionLabel === option.label;
+          const isCorrectOption = problem.correctOptionLabel === option.label || option.isCorrect === true;
           const isUserChoice = selectedOptionLabel === option.label;
 
           let btnStyles = 'bg-stone-50 dark:bg-stone-800/60 border-stone-200 dark:border-stone-700 text-stone-800 dark:text-stone-200 hover:border-stone-400 dark:hover:border-stone-500';
@@ -261,7 +261,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
                 Methodology & Formula:
               </div>
               <div className="p-2.5 bg-white dark:bg-stone-800 rounded-lg border border-stone-200 dark:border-stone-700 text-xs font-mono text-stone-800 dark:text-stone-200">
-                <MathRenderer text={`$$${problem.formulaUsed}$$`} block />
+                <MathRenderer text={problem.formulaUsed} block />
                 <span className="block text-[11px] font-sans text-stone-500 dark:text-stone-400 mt-1">
                   {problem.methodology}
                 </span>
@@ -293,7 +293,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
                       </div>
                       {step.mathFormula && (
                         <div className="mt-1.5 p-1.5 bg-stone-50 dark:bg-stone-900 rounded font-mono text-[11px] text-stone-800 dark:text-stone-200">
-                          <MathRenderer text={`$${step.mathFormula}$`} />
+                          <MathRenderer text={step.mathFormula} />
                         </div>
                       )}
                     </div>

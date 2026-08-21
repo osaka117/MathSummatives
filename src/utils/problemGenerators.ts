@@ -411,7 +411,7 @@ export function generateTrigonometryProblem(level: DifficultyLevel): PracticePro
             explanation: 'SSS, SAS, and ASA always produce uniquely determined triangles (or none if triangle inequality fails). SSA is ambiguous because the swinging side can form 0, 1, or 2 triangles.'
           }
         ],
-        acceptableAnswers: ['SSA', 'c', correctAns, correctLabel]
+        acceptableAnswers: ['SSA', 'SSA (Side-Side-Angle)', correctAns]
       };
     }
 

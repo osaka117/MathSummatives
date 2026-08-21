@@ -1,69 +1,122 @@
 import { PracticeProblem } from '../types/math';
 
+export interface ValidationResult {
+  isCorrect: boolean;
+  feedback: string;
+}
+
 export function validateAnswer(
   userRawInput: string,
   problem: PracticeProblem,
   selectedOptionLabel?: string
-): { isCorrect: boolean; feedback: string } {
-  const trimmed = userRawInput.trim();
+): ValidationResult {
+  const trimmed = (userRawInput || '').trim();
 
-  // 1. If user clicked a multiple-choice option
+  // 1. Multiple-Choice Mode: If user clicked an explicit multiple-choice option button ('a', 'b', 'c', 'd')
   if (selectedOptionLabel) {
-    if (problem.correctOptionLabel && selectedOptionLabel.toLowerCase() === problem.correctOptionLabel.toLowerCase()) {
+    const selectedClean = selectedOptionLabel.trim().toLowerCase();
+    const correctClean = (problem.correctOptionLabel || '').trim().toLowerCase();
+
+    // Direct check by option label
+    if (correctClean && selectedClean === correctClean) {
       return {
         isCorrect: true,
-        feedback: 'Correct! You selected the right answer.'
+        feedback: `Correct! You selected Option (${selectedOptionLabel.toUpperCase()}).`
       };
     }
+
+    // Direct check by option object property
+    const chosenOption = problem.options.find(
+      opt => opt.label.trim().toLowerCase() === selectedClean
+    );
+    if (chosenOption && chosenOption.isCorrect === true) {
+      return {
+        isCorrect: true,
+        feedback: `Correct! You selected Option (${selectedOptionLabel.toUpperCase()}).`
+      };
+    }
+
+    // If neither matched, this multiple choice selection is INCORRECT.
+    return {
+      isCorrect: false,
+      feedback: `Incorrect. Option (${selectedOptionLabel.toUpperCase()}) is not the correct answer.`
+    };
   }
 
-  // 2. Direct string match against correct option label ('a', 'b', 'c', 'd')
-  if (trimmed.length === 1 && problem.correctOptionLabel) {
-    if (trimmed.toLowerCase() === problem.correctOptionLabel.toLowerCase()) {
+  // If input is empty
+  if (!trimmed) {
+    return {
+      isCorrect: false,
+      feedback: 'Please enter or select an answer before submitting.'
+    };
+  }
+
+  // 2. Direct single-letter typed answer (e.g. user typed "b", "(b)", "Option B", "b.")
+  const singleLetterMatch = trimmed.match(/^[\(\[]?\s*([a-dA-D])\s*[\)\]\.]?$/i) ||
+                            trimmed.match(/^option\s+([a-dA-D])$/i);
+  if (singleLetterMatch && problem.correctOptionLabel) {
+    const typedLetter = singleLetterMatch[1].toLowerCase();
+    const correctLetter = problem.correctOptionLabel.toLowerCase();
+    if (typedLetter === correctLetter) {
       return {
         isCorrect: true,
         feedback: `Correct! Option (${problem.correctOptionLabel.toUpperCase()}) is the right answer.`
       };
+    } else {
+      return {
+        isCorrect: false,
+        feedback: `Incorrect. Option (${typedLetter.toUpperCase()}) is not the correct answer.`
+      };
     }
   }
 
-  // 3. Match against acceptable answers list
   const normInput = normalizeMathString(trimmed);
-  if (problem.acceptableAnswers && problem.acceptableAnswers.length > 0) {
-    for (const acceptable of problem.acceptableAnswers) {
-      if (normInput === normalizeMathString(acceptable)) {
-        return {
-          isCorrect: true,
-          feedback: 'Correct! Your answer matches the solution.'
-        };
-      }
-    }
+
+  // 3. Prevent false positives: Check if typed text matches any of the explicit INCORRECT options
+  const matchedIncorrectOption = problem.options.find(
+    opt => !opt.isCorrect && normalizeMathString(opt.text) === normInput
+  );
+  if (matchedIncorrectOption) {
+    return {
+      isCorrect: false,
+      feedback: `Incorrect. "${trimmed}" is not the correct answer.`
+    };
   }
 
-  // 4. Match against correct answer string
-  const normCorrect = normalizeMathString(problem.correctAnswer);
-  if (normInput === normCorrect) {
+  // 4. Exact string match against normalized correct answer
+  const normCorrectAnswer = normalizeMathString(problem.correctAnswer);
+  if (normInput === normCorrectAnswer) {
     return {
       isCorrect: true,
       feedback: 'Correct! Excellent work.'
     };
   }
 
-  // 5. Numeric tolerance checking (e.g. 19.4 vs 19.40, 13.23 vs 13.2)
-  const userNum = extractNumber(trimmed);
-  const correctNum = extractNumber(problem.correctAnswer);
-  if (userNum !== null && correctNum !== null) {
-    const diff = Math.abs(userNum - correctNum);
-    // Allow up to 0.15 difference or 1% tolerance
-    if (diff <= 0.15 || diff / (Math.abs(correctNum) || 1) < 0.02) {
-      return {
-        isCorrect: true,
-        feedback: `Correct! (Calculated value ${userNum} is within acceptable rounding tolerance).`
-      };
+  // 5. Match against the correct option object's text
+  const correctOption = problem.options.find(opt => opt.isCorrect);
+  if (correctOption && normInput === normalizeMathString(correctOption.text)) {
+    return {
+      isCorrect: true,
+      feedback: 'Correct! Your answer matches the solution.'
+    };
+  }
+
+  // 6. Match against valid acceptable answers list
+  if (problem.acceptableAnswers && problem.acceptableAnswers.length > 0) {
+    for (const acceptable of problem.acceptableAnswers) {
+      if (acceptable) {
+        const normAcceptable = normalizeMathString(acceptable);
+        if (normInput === normAcceptable) {
+          return {
+            isCorrect: true,
+            feedback: 'Correct! Your answer matches the solution.'
+          };
+        }
+      }
     }
   }
 
-  // 6. Coordinates comparison: (x, y) vs x, y
+  // 7. Coordinates comparison (e.g. "(5, -2)" vs "5, -2")
   const userCoords = extractCoordinates(trimmed);
   const correctCoords = extractCoordinates(problem.correctAnswer);
   if (userCoords && correctCoords) {
@@ -75,7 +128,7 @@ export function validateAnswer(
     }
   }
 
-  // 7. Interval check: e.g. [3, 8] vs [3,8]
+  // 8. Interval notation comparison (e.g. "[3, 8]" vs "[3,8]")
   const userInterval = extractInterval(trimmed);
   const correctInterval = extractInterval(problem.correctAnswer);
   if (userInterval && correctInterval && userInterval === correctInterval) {
@@ -85,34 +138,56 @@ export function validateAnswer(
     };
   }
 
-  // If none matched
+  // 9. Numeric tolerance comparison (only for purely numeric answers, strictly within 0.05)
+  const userNum = extractNumber(trimmed);
+  const correctNum = extractNumber(problem.correctAnswer);
+  if (userNum !== null && correctNum !== null && !isNaN(userNum) && !isNaN(correctNum)) {
+    const diff = Math.abs(userNum - correctNum);
+    // Allow strict rounding tolerance up to 0.05 (e.g. 19.4 vs 19.40)
+    if (diff <= 0.05) {
+      return {
+        isCorrect: true,
+        feedback: 'Correct! Your calculated value matches.'
+      };
+    }
+  }
+
+  // If none matched, mark as Incorrect
   return {
     isCorrect: false,
     feedback: 'Incorrect. Review the step-by-step solution below to see the methodology.'
   };
 }
 
-function normalizeMathString(str: string): string {
+export function normalizeMathString(str: string): string {
+  if (!str) return '';
   return str
     .toLowerCase()
     .replace(/\s+/g, '')
     .replace(/\\text\{([^}]+)\}/g, '$1')
     .replace(/\\left|\\right/g, '')
-    .replace(/\\le/g, '<=')
-    .replace(/\\ge/g, '>=')
-    .replace(/≤/g, '<=')
-    .replace(/≥/g, '>=')
+    .replace(/\\le|<=|≤/g, '<=')
+    .replace(/\\ge|>=|≥/g, '>=')
+    .replace(/\\ne|!=|≠/g, '!=')
+    .replace(/\\pm|±/g, '+-')
+    .replace(/\\cdot|\\times|×|\*/g, '*')
     .replace(/\\approx/g, '=')
     .replace(/\\circ|°/g, '')
-    .replace(/cm|km|meters|m\^2|m²/g, '')
+    .replace(/\\cup/g, 'u')
+    .replace(/\\infty/g, 'inf')
+    .replace(/cm|km|miles|meters|m\^2|m²|degrees/g, '')
     .replace(/[$]/g, '');
 }
 
 function extractNumber(str: string): number | null {
-  const match = str.match(/[-+]?[0-9]*\.?[0-9]+/);
-  if (!match) return null;
-  const num = parseFloat(match[0]);
-  return isNaN(num) ? null : num;
+  // Only extract if string represents a single numeric value (e.g. "19.40 cm" or "19.4")
+  const cleaned = str.replace(/[^\d.-]/g, ' ').trim();
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length === 1) {
+    const num = parseFloat(tokens[0]);
+    return isNaN(num) ? null : num;
+  }
+  return null;
 }
 
 function extractCoordinates(str: string): [number, number] | null {
@@ -125,9 +200,9 @@ function extractCoordinates(str: string): [number, number] | null {
 }
 
 function extractInterval(str: string): string | null {
-  const match = str.match(/([(\[])\s*(-?\d+|-\w+)\s*,\s*(\d+|\w+)\s*([)\]])/);
+  const match = str.match(/([(\[])\s*(-?\d+|-\w+|-?\\infty)\s*,\s*(\d+|\w+|\\infty|\+?\\infty)\s*([)\]])/);
   if (match) {
-    return `${match[1]}${match[2]},${match[3]}${match[4]}`;
+    return `${match[1]}${match[2].replace('\\', '')},${match[3].replace('\\', '')}${match[4]}`;
   }
   return null;
 }
